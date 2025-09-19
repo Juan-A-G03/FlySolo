@@ -1,9 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
-import { AuthUtils, JWTPayload } from '@/utils/auth.utils';
-import { ResponseUtils } from '@/utils/response.utils';
-import { UserRole } from '@/entities';
+import { AuthUtils, JWTPayload } from '../utils/auth.utils';
+import { ResponseUtils } from '../utils/response.utils';
 
-// Extend Request interface to include user
+// Extend the Express Request interface
 declare global {
   namespace Express {
     interface Request {
@@ -14,93 +13,88 @@ declare global {
 
 export class AuthMiddleware {
   /**
-   * Verify JWT token and attach user to request
+   * Authenticate user using JWT token
    */
-  static authenticate = async (req: Request, res: Response, next: NextFunction) => {
+  static authenticate(req: Request, res: Response, next: NextFunction) {
     try {
-      const token = AuthUtils.extractTokenFromHeader(req.headers.authorization);
+      const authHeader = req.headers.authorization;
+      const token = AuthUtils.extractTokenFromHeader(authHeader);
 
       if (!token) {
-        return ResponseUtils.unauthorized(res, 'No token provided');
+        return ResponseUtils.unauthorized(res, 'Access token is required');
       }
 
       const decoded = AuthUtils.verifyToken(token);
+      if (!decoded) {
+        return ResponseUtils.unauthorized(res, 'Invalid or expired token');
+      }
+
+      // Add user information to request object
       req.user = decoded;
-      
       next();
     } catch (error) {
-      return ResponseUtils.unauthorized(res, 'Invalid or expired token');
+      console.error('Authentication error:', error);
+      return ResponseUtils.unauthorized(res, 'Authentication failed');
     }
-  };
+  }
 
   /**
-   * Check if user has required role
+   * Authorize user based on roles
    */
-  static authorize = (requiredRole: UserRole) => {
+  static authorize(roles: string[]) {
     return (req: Request, res: Response, next: NextFunction) => {
-      if (!req.user) {
-        return ResponseUtils.unauthorized(res, 'Authentication required');
-      }
+      try {
+        if (!req.user) {
+          return ResponseUtils.unauthorized(res, 'Authentication required');
+        }
 
-      if (!AuthUtils.hasRole(req.user.role, requiredRole)) {
-        return ResponseUtils.forbidden(res, 'Insufficient permissions');
-      }
+        if (!roles.includes(req.user.role)) {
+          return ResponseUtils.forbidden(res, 'Insufficient permissions');
+        }
 
-      next();
+        next();
+      } catch (error) {
+        console.error('Authorization error:', error);
+        return ResponseUtils.forbidden(res, 'Authorization failed');
+      }
     };
-  };
+  }
 
   /**
-   * Check if user has any of the required roles
+   * Authorize user based on faction
    */
-  static authorizeAny = (requiredRoles: UserRole[]) => {
+  static authorizeFaction(factions: string[]) {
     return (req: Request, res: Response, next: NextFunction) => {
-      if (!req.user) {
-        return ResponseUtils.unauthorized(res, 'Authentication required');
-      }
+      try {
+        if (!req.user) {
+          return ResponseUtils.unauthorized(res, 'Authentication required');
+        }
 
-      if (!AuthUtils.hasAnyRole(req.user.role, requiredRoles)) {
-        return ResponseUtils.forbidden(res, 'Insufficient permissions');
-      }
+        // Allow if user has no faction (neutral) or if faction matches
+        if (!req.user.faction || factions.includes(req.user.faction)) {
+          return next();
+        }
 
-      next();
+        return ResponseUtils.forbidden(res, 'Faction access denied');
+      } catch (error) {
+        console.error('Faction authorization error:', error);
+        return ResponseUtils.forbidden(res, 'Faction authorization failed');
+      }
     };
-  };
+  }
 
   /**
-   * Optional authentication - attach user if token exists but don't require it
+   * Authorize admin users only
    */
-  static optionalAuth = async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const token = AuthUtils.extractTokenFromHeader(req.headers.authorization);
-
-      if (token) {
-        const decoded = AuthUtils.verifyToken(token);
-        req.user = decoded;
-      }
-    } catch (error) {
-      // Token is invalid, but we continue without user
-    }
-
-    next();
-  };
+  static adminOnly = AuthMiddleware.authorize(['ADMIN']);
 
   /**
-   * Check if user is accessing their own resource
+   * Authorize pilot users only
    */
-  static isOwnerOrAdmin = (req: Request, res: Response, next: NextFunction) => {
-    if (!req.user) {
-      return ResponseUtils.unauthorized(res, 'Authentication required');
-    }
+  static pilotOnly = AuthMiddleware.authorize(['PILOT']);
 
-    const resourceUserId = req.params.id || req.params.userId;
-    const isOwner = req.user.userId === resourceUserId;
-    const isAdmin = req.user.role === UserRole.ADMIN;
-
-    if (!isOwner && !isAdmin) {
-      return ResponseUtils.forbidden(res, 'You can only access your own resources');
-    }
-
-    next();
-  };
+  /**
+   * Authorize pilot and admin users
+   */
+  static pilotOrAdmin = AuthMiddleware.authorize(['PILOT', 'ADMIN']);
 }

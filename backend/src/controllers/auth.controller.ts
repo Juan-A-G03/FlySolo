@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
-import { prisma } from '@/index';
-import { AuthUtils } from '@/utils/auth.utils';
-import { ResponseUtils } from '@/utils/response.utils';
-import { FileUtils } from '@/utils/file.utils';
+import { prisma } from '../index';
+import { AuthUtils } from '../utils/auth.utils';
+import { ResponseUtils } from '../utils/response.utils';
+import { FileUtils } from '../utils/file.utils';
 import { z } from 'zod';
 
 // Extend Request type for file uploads
@@ -50,11 +50,12 @@ export class AuthController {
       // Hash password
       const hashedPassword = await AuthUtils.hashPassword(validatedData.password);
 
-      // Create user
+      // Create user - set default faction if not provided
       const user = await prisma.user.create({
         data: {
           ...validatedData,
           password: hashedPassword,
+          faction: validatedData.faction || 'NEUTRAL', // Default to NEUTRAL if not provided
         },
         select: {
           id: true,
@@ -69,13 +70,13 @@ export class AuthController {
         }
       });
 
-      // Generate token
+      // Generate token - faction can be null from database
       const token = AuthUtils.generateToken({
         userId: user.id,
         id: user.id, // Added for convenience
         email: user.email,
         role: user.role,
-        faction: user.faction,
+        faction: user.faction, // This can be null
       });
 
       return ResponseUtils.success(res, {
@@ -103,7 +104,21 @@ export class AuthController {
 
       // Find user
       const user = await prisma.user.findUnique({
-        where: { email: validatedData.email }
+        where: { email: validatedData.email },
+        // Make sure to include all fields needed for token generation
+        select: {
+          id: true,
+          email: true,
+          password: true,
+          firstName: true,
+          lastName: true,
+          profileImage: true,
+          role: true,
+          faction: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
+        }
       });
 
       if (!user || !user.isActive) {
@@ -120,13 +135,13 @@ export class AuthController {
         return ResponseUtils.unauthorized(res, 'Invalid credentials');
       }
 
-      // Generate token
+      // Generate token - faction can be null from database
       const token = AuthUtils.generateToken({
         userId: user.id,
         id: user.id, // Added for convenience
         email: user.email,
         role: user.role,
-        faction: user.faction,
+        faction: user.faction, // This can be null
       });
 
       // Remove password from response
@@ -175,6 +190,7 @@ export class AuthController {
           lastName: true,
           profileImage: true,
           role: true,
+          faction: true,
           isActive: true,
           createdAt: true,
           updatedAt: true,
@@ -226,6 +242,7 @@ export class AuthController {
           lastName: true,
           profileImage: true,
           role: true,
+          faction: true,
           isActive: true,
           createdAt: true,
           updatedAt: true,
@@ -287,6 +304,7 @@ export class AuthController {
           lastName: true,
           profileImage: true,
           role: true,
+          faction: true,
           isActive: true,
           createdAt: true,
           updatedAt: true,
@@ -348,6 +366,7 @@ export class AuthController {
           lastName: true,
           profileImage: true,
           role: true,
+          faction: true,
           isActive: true,
           createdAt: true,
           updatedAt: true,
