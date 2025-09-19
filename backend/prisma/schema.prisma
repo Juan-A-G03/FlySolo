@@ -1,0 +1,217 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  firstName String
+  lastName  String
+  profileImage String? // Path to profile image
+  role      String   @default("USER") // USER, PILOT, ADMIN
+  faction   String?  // REBEL, IMPERIAL, NEUTRAL
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  pilotApplication PilotApplication[] @relation("PilotApplicationUser")
+  pilotApplicationsReviewed PilotApplication[] @relation("PilotApplicationReviewer")
+  passengerTrips   Trip[]             @relation("PassengerTrips")
+  pilotTrips       Trip[]             @relation("PilotTrips")
+  pilotShips       PilotShip[]
+  reviewsGiven     Review[]           @relation("ReviewsGiven")
+  reviewsReceived  Review[]           @relation("ReviewsReceived")
+  pilotStats       PilotStats?
+  createdShips     Ship[]             @relation("CreatedShips")
+  createdWeapons   Weapon[]           @relation("CreatedWeapons")
+  approvedWeapons  PilotShipWeapon[]  @relation("ApprovedWeapons")
+
+  @@map("users")
+}
+
+model PilotApplication {
+  id              String                @id @default(cuid())
+  userId          String
+  licenseNumber   String
+  status          String                @default("PENDING") // PENDING, APPROVED, REJECTED
+  applicationDate DateTime              @default(now())
+  reviewDate      DateTime?
+  reviewedBy      String?
+
+  // Relations
+  user     User  @relation("PilotApplicationUser", fields: [userId], references: [id], onDelete: Cascade)
+  reviewer User? @relation("PilotApplicationReviewer", fields: [reviewedBy], references: [id])
+
+  @@map("pilot_applications")
+}
+
+model SolarSystem {
+  id      String @id @default(cuid())
+  name    String @unique
+  centerX Float
+  centerY Float
+  centerZ Float
+
+  // Relations
+  planets Planet[]
+
+  @@map("solar_systems")
+}
+
+model Planet {
+  id            String @id @default(cuid())
+  name          String @unique
+  solarSystemId String
+  coordinateX   Float
+  coordinateY   Float
+  coordinateZ   Float
+
+  // Relations
+  solarSystem      SolarSystem @relation(fields: [solarSystemId], references: [id], onDelete: Cascade)
+  originTrips      Trip[]      @relation("OriginTrips")
+  destinationTrips Trip[]      @relation("DestinationTrips")
+
+  @@map("planets")
+}
+
+model Ship {
+  id                  String  @id @default(cuid())
+  name                String
+  model               String
+  registration        String  @unique
+  passengerCapacity   Int
+  cargoCapacity       Float
+  canHyperspaceTravel Boolean @default(false)
+  isActive            Boolean @default(true)
+  createdBy           String
+
+  // Relations
+  creator    User        @relation("CreatedShips", fields: [createdBy], references: [id])
+  pilotShips PilotShip[]
+
+  @@map("ships")
+}
+
+model Weapon {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  type        String
+  damage      Int
+  description String?
+  isActive    Boolean @default(true)
+  createdBy   String
+
+  // Relations
+  creator          User              @relation("CreatedWeapons", fields: [createdBy], references: [id])
+  pilotShipWeapons PilotShipWeapon[]
+
+  @@map("weapons")
+}
+
+model PilotShip {
+  id           String           @id @default(cuid())
+  pilotId      String
+  shipId       String
+  isActive     Boolean          @default(true)
+  assignedDate DateTime         @default(now())
+  status       String           @default("ACTIVE") // ACTIVE, PENDING_MODIFICATION, PENDING_CHANGE
+
+  // Relations
+  pilot   User              @relation(fields: [pilotId], references: [id], onDelete: Cascade)
+  ship    Ship              @relation(fields: [shipId], references: [id], onDelete: Cascade)
+  weapons PilotShipWeapon[]
+
+  @@unique([pilotId, isActive])
+  @@map("pilot_ships")
+}
+
+model PilotShipWeapon {
+  id           String    @id @default(cuid())
+  pilotShipId  String
+  weaponId     String
+  quantity     Int       @default(1)
+  isApproved   Boolean   @default(false)
+  requestDate  DateTime  @default(now())
+  approvedBy   String?
+  approvedDate DateTime?
+
+  // Relations
+  pilotShip PilotShip @relation(fields: [pilotShipId], references: [id], onDelete: Cascade)
+  weapon    Weapon    @relation(fields: [weaponId], references: [id], onDelete: Cascade)
+  approver  User?     @relation("ApprovedWeapons", fields: [approvedBy], references: [id])
+
+  @@map("pilot_ship_weapons")
+}
+
+model Trip {
+  id                  String     @id @default(cuid())
+  passengerId         String
+  pilotId             String?
+  originPlanetId      String
+  destinationPlanetId String
+  tripType            String     // PASSENGER, CARGO
+  passengerCount      Int?
+  cargoWeight         Float?
+  cargoDescription    String?
+  calculatedDistance  Float
+  estimatedDuration   Int // minutes
+  price               Float
+  faction             String?    // REBEL, IMPERIAL - faction specific trip
+  isCovert            Boolean    @default(false) // true for undercover missions
+  status              String     @default("PENDING") // PENDING, ASSIGNED, IN_PROGRESS, COMPLETED, CANCELLED
+  requestDate         DateTime   @default(now())
+  assignedDate        DateTime?
+  startDate           DateTime?
+  completedDate       DateTime?
+
+  // Relations
+  passenger         User    @relation("PassengerTrips", fields: [passengerId], references: [id], onDelete: Cascade)
+  pilot             User?   @relation("PilotTrips", fields: [pilotId], references: [id])
+  originPlanet      Planet  @relation("OriginTrips", fields: [originPlanetId], references: [id])
+  destinationPlanet Planet  @relation("DestinationTrips", fields: [destinationPlanetId], references: [id])
+  review            Review?
+
+  @@map("trips")
+}
+
+model Review {
+  id          String   @id @default(cuid())
+  tripId      String   @unique
+  reviewerId  String
+  reviewedId  String
+  rating      Int // 1-5
+  comment     String?
+  createdDate DateTime @default(now())
+
+  // Relations
+  trip     Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  reviewer User @relation("ReviewsGiven", fields: [reviewerId], references: [id])
+  reviewed User @relation("ReviewsReceived", fields: [reviewedId], references: [id])
+
+  @@map("reviews")
+}
+
+model PilotStats {
+  id             String   @id @default(cuid())
+  pilotId        String   @unique
+  totalTrips     Int      @default(0)
+  totalDistance  Float    @default(0)
+  averageRating  Float    @default(0)
+  totalEarnings  Float    @default(0)
+  lastUpdated    DateTime @updatedAt
+
+  // Relations
+  pilot User @relation(fields: [pilotId], references: [id], onDelete: Cascade)
+
+  @@map("pilot_stats")
+}
